@@ -13,24 +13,64 @@
     <style>
         body { background-color: #121815; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         #map { width: 100%; height: 100vh; z-index: 1; }
-        .custom-avatar-icon {
-            background: #1e293b;
-            border: 3px solid #10b981;
-            border-radius: 50%;
+        
+        /* 十字亮點標籤樣式 */
+        .crosshair-avatar-container {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 22px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-            transition: transform 0.2s;
         }
-        .custom-avatar-icon.sos-active {
-            border-color: #ef4444;
-            animation: sos-pulse 1s infinite alternate;
+        .crosshair-point {
+            width: 14px;
+            height: 14px;
+            background-color: #facc15; /* 亮黃色中心點 */
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #facc15, 0 0 20px #facc15;
+            animation: pulse-light 1.5s infinite alternate;
         }
-        @keyframes sos-pulse {
-            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            100% { transform: scale(1.25); box-shadow: 0 0 0 14px rgba(239, 68, 68, 0); }
+        .crosshair-ring {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            border: 1.5px dashed #facc15;
+            border-radius: 50%;
+            animation: spin-ring 6s linear infinite;
+        }
+        .avatar-tag {
+            position: absolute;
+            left: 22px;
+            top: -12px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #facc15;
+            color: #ffffff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .sos-active .crosshair-point {
+            background-color: #ef4444 !important;
+            box-shadow: 0 0 10px #ef4444, 0 0 20px #ef4444 !important;
+        }
+        .sos-active .avatar-tag {
+            border-color: #ef4444 !important;
+            color: #fca5a5 !important;
+        }
+
+        @keyframes pulse-light {
+            0% { transform: scale(0.9); opacity: 0.8; }
+            100% { transform: scale(1.2); opacity: 1; }
+        }
+        @keyframes spin-ring {
+            100% { transform: rotate(360deg); }
         }
         .nav-pulse-btn { animation: nav-pulse 2s infinite; }
         @keyframes nav-pulse {
@@ -46,12 +86,12 @@
     <div id="map" class="absolute inset-0"></div>
 
     <!-- SOS 全螢幕緊急通報橫幅 (預設隱藏) -->
-    <div id="sosBanner" class="hidden absolute top-16 left-4 right-4 z-30 bg-red-600/95 text-white p-3.5 rounded-2xl shadow-2xl border border-red-400 flex justify-between items-center animate-bounce">
+    <div id="sosBanner" class="hidden absolute top-20 left-4 right-4 z-30 bg-red-600/95 text-white p-3.5 rounded-2xl shadow-2xl border border-red-400 flex justify-between items-center animate-bounce">
         <div class="flex items-center space-x-2">
             <span class="text-2xl">🚨</span>
             <div>
                 <h3 class="font-extrabold text-sm" id="sosBannerTitle">緊急救援通報！</h3>
-                <p class="text-xs opacity-90" id="sosBannerDesc">有隊友發出 SOS 訊號，請立即前往支援！</p>
+                <p class="text-xs opacity-90" id="sosBannerDesc">有隊友發出 SOS 訊號，請聲援！</p>
             </div>
         </div>
         <button id="sosLocateBtn" class="bg-white text-red-700 font-extrabold text-xs px-3 py-2 rounded-xl shadow hover:bg-slate-100">
@@ -60,31 +100,31 @@
     </div>
 
     <!-- 一鍵定位隊長按鈕 -->
-    <button id="recenterBtn" class="absolute bottom-28 right-4 z-10 bg-slate-900/90 hover:bg-slate-800 text-emerald-400 p-3 rounded-full shadow-xl border border-emerald-500/40 flex items-center justify-center text-xl transition active:scale-95 pointer-events-auto" title="回到我的位置">
+    <button id="recenterBtn" class="absolute bottom-28 right-4 z-10 bg-slate-900/90 hover:bg-slate-800 text-yellow-400 p-3 rounded-full shadow-xl border border-yellow-500/50 flex items-center justify-center text-xl transition active:scale-95 pointer-events-auto" title="回到我的位置">
         🎯
     </button>
 
-    <!-- 頂部標題與房號設定 -->
+    <!-- 頂部標題與大黃字房號 -->
     <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
-        <div class="bg-slate-900/90 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-emerald-500/30 shadow-lg pointer-events-auto flex items-center space-x-2">
-            <span class="text-xl">🏕️</span>
+        <div class="bg-slate-900/95 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-yellow-500/60 shadow-2xl pointer-events-auto flex items-center space-x-3">
+            <span class="text-2xl">🏕️</span>
             <div>
-                <h1 class="text-xs font-bold text-emerald-400 tracking-wider">放風小隊</h1>
-                <div class="flex items-center gap-1 mt-0.5">
-                    <span class="text-[10px] text-slate-400">房號:</span>
-                    <input type="text" id="roomIdInput" value="fangfeng888" class="bg-slate-800 text-xs text-emerald-300 font-bold w-20 px-1.5 py-0.5 rounded border border-slate-700 focus:outline-none focus:border-emerald-500">
+                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">小隊專屬連線房號</div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-yellow-400 font-extrabold text-xl tracking-wide">#</span>
+                    <input type="text" id="roomIdInput" value="fangfeng888" class="bg-slate-800/80 text-yellow-300 font-black text-lg w-28 px-2 py-0.5 rounded-lg border border-yellow-500/40 focus:outline-none focus:border-yellow-400 tracking-wider">
                 </div>
             </div>
         </div>
 
-        <div class="bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700 shadow-lg pointer-events-auto flex items-center space-x-2">
-            <span class="text-xs text-slate-300 font-medium">暱稱:</span>
-            <input type="text" id="userNameInput" value="阿忠隊長" class="bg-slate-800 text-xs text-slate-100 font-bold w-16 px-1.5 py-0.5 rounded border border-slate-700 focus:outline-none">
+        <div class="bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700 shadow-lg pointer-events-auto flex items-center space-x-1.5">
+            <span id="currentAvatarDisplay" class="text-xl">👑</span>
+            <input type="text" id="userNameInput" value="阿忠隊長" class="bg-slate-800 text-xs text-slate-100 font-bold w-16 px-1.5 py-1 rounded border border-slate-700 focus:outline-none">
         </div>
     </div>
 
     <!-- 底部「懸浮快收」面板 -->
-    <div id="bottomSheet" class="absolute bottom-0 left-0 right-0 z-20 bg-slate-900/95 backdrop-blur-xl border-t border-emerald-500/30 rounded-t-3xl shadow-2xl transition-transform duration-300 flex flex-col max-h-[70vh]">
+    <div id="bottomSheet" class="absolute bottom-0 left-0 right-0 z-20 bg-slate-900/95 backdrop-blur-xl border-t border-yellow-500/40 rounded-t-3xl shadow-2xl transition-transform duration-300 flex flex-col max-h-[75vh]">
         
         <div id="sheetHandle" class="w-full py-3 flex justify-center items-center cursor-pointer">
             <div class="w-12 h-1.5 bg-slate-700 rounded-full"></div>
@@ -92,10 +132,31 @@
 
         <div class="px-5 pb-6 overflow-y-auto space-y-4">
             
-            <!-- 狀態與 SOS 區 -->
-            <div class="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 space-y-2.5">
-                <div class="flex justify-between items-center">
-                    <span class="text-xs font-bold text-emerald-400 flex items-center gap-1">
+            <!-- 個人圖標與狀態區 -->
+            <div class="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 space-y-3">
+                
+                <!-- Emoji 圖示選擇區 -->
+                <div>
+                    <div class="text-xs font-bold text-slate-400 mb-1.5 flex justify-between">
+                        <span>選擇你的隊友專屬圖案 (Emoji)</span>
+                        <span id="gpsCoordsText" class="text-[10px] text-yellow-400 font-mono">GPS 讀取中...</span>
+                    </div>
+                    <div class="flex gap-2 overflow-x-auto pb-1 text-xl no-scrollbar">
+                        <button onclick="selectEmoji('👑')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">👑</button>
+                        <button onclick="selectEmoji('🏕️')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🏕️</button>
+                        <button onclick="selectEmoji('🚴')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🚴</button>
+                        <button onclick="selectEmoji('🥾')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🥾</button>
+                        <button onclick="selectEmoji('🔥')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🔥</button>
+                        <button onclick="selectEmoji('🎒')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🎒</button>
+                        <button onclick="selectEmoji('🏮')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🏮</button>
+                        <button onclick="selectEmoji('📷')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">📷</button>
+                        <button onclick="selectEmoji('🐶')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🐶</button>
+                        <button onclick="selectEmoji('🐱')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🐱</button>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center pt-1 border-t border-slate-700/60">
+                    <span class="text-xs font-bold text-yellow-400 flex items-center gap-1">
                         <span>💬</span> 我的小隊動態狀態
                     </span>
                     <button id="sosTriggerBtn" class="bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold px-3 py-1 rounded-xl shadow-lg shadow-red-600/40 flex items-center gap-1 animate-pulse">
@@ -104,11 +165,11 @@
                 </div>
                 
                 <div class="flex gap-2">
-                    <input type="text" id="statusInput" placeholder="輸入動態..." class="flex-1 bg-slate-900 text-sm border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500">
-                    <button id="sendBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-lg shadow-emerald-600/30">發送</button>
+                    <input type="text" id="statusInput" placeholder="輸入動態..." class="flex-1 bg-slate-900 text-sm border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-yellow-500">
+                    <button id="sendBtn" class="bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-sm transition shadow-lg shadow-yellow-500/20">發送</button>
                 </div>
 
-                <div class="flex gap-1.5 overflow-x-auto pt-1 pb-1 text-xs no-scrollbar">
+                <div class="flex gap-1.5 overflow-x-auto pt-0.5 pb-0.5 text-xs no-scrollbar">
                     <button onclick="setStatus('🎒 剛出發')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🎒 剛出發</button>
                     <button onclick="setStatus('💦 休息中')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">💦 休息中</button>
                     <button onclick="setStatus('🔥 抵達集結點')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🔥 抵達集結點</button>
@@ -118,8 +179,8 @@
             <!-- 隊友即時清單 -->
             <div>
                 <div class="flex justify-between items-center mb-2">
-                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase">小隊員即時雷達 (Firebase 連線)</h2>
-                    <span id="memberCount" class="text-xs text-emerald-400 font-semibold">連線中...</span>
+                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase">小隊員即時雷達</h2>
+                    <span id="memberCount" class="text-xs text-yellow-400 font-semibold">連線中...</span>
                 </div>
                 <div id="memberList" class="space-y-2.5"></div>
             </div>
@@ -136,7 +197,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // 公用免費測試 Firebase 即時資料庫設定檔
         const firebaseConfig = {
             databaseURL: "https://fangfeng-default-rtdb.asia-southeast1.firebasedatabase.app"
         };
@@ -144,28 +204,27 @@
         const app = initializeApp(firebaseConfig);
         const database = getDatabase(app);
 
-        // 使用者唯一 ID (隨機生成)
         const myUserId = 'user_' + Math.random().toString(36).substring(2, 9);
         let myRoomId = document.getElementById('roomIdInput').value.trim() || 'fangfeng888';
-        let myName = document.getElementById('userNameInput').value.trim() || '隊長';
+        let myName = document.getElementById('userNameInput').value.trim() || '阿忠隊長';
+        let myAvatar = '👑';
         let myLat = 22.6273, myLng = 120.3014;
         let myStatus = '🎒 剛出發';
         let isSOS = false;
 
         // 初始化地圖
-        const map = L.map('map', { zoomControl: false }).setView([myLat, myLng], 15);
+        const map = L.map('map', { zoomControl: false }).setView([myLat, myLng], 16);
         L.control.zoom({ position: 'topright' }).addTo(map);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19, attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        const markersGroup = L.markerClusterGroup({ maxClusterRadius: 40 });
+        const markersGroup = L.markerClusterGroup({ maxClusterRadius: 30 });
         map.addLayer(markersGroup);
 
         let onlineMembers = {};
 
-        // 距離計算 (公尺)
         function getDistanceInMeters(lat1, lon1, lat2, lon2) {
             const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -176,13 +235,12 @@
             return Math.round(R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))));
         }
 
-        // 推送目前數據至 Firebase
         function syncToFirebase() {
             const userRef = ref(database, `rooms/${myRoomId}/${myUserId}`);
             set(userRef, {
                 id: myUserId,
                 name: myName,
-                avatar: isSOS ? '🚨' : '🏕️',
+                avatar: myAvatar,
                 lat: myLat,
                 lng: myLng,
                 status: myStatus,
@@ -192,7 +250,6 @@
             onDisconnect(userRef).remove();
         }
 
-        // 監聽房間資料變化
         function listenRoomData() {
             const roomRef = ref(database, `rooms/${myRoomId}`);
             onValue(roomRef, (snapshot) => {
@@ -203,7 +260,6 @@
 
         listenRoomData();
 
-        // 渲染地圖與清單
         function renderMapAndList() {
             markersGroup.clearLayers();
             const listContainer = document.getElementById('memberList');
@@ -218,19 +274,29 @@
                 const isMe = member.id === myUserId;
                 const sosClass = member.isSOS ? 'sos-active' : '';
 
+                // 十字亮點 + 暱稱/Emoji 標籤
                 const customIcon = L.divIcon({
                     className: '',
-                    html: `<div class="custom-avatar-icon ${sosClass} w-10 h-10">${member.avatar || '🏕️'}</div>`,
-                    iconSize: [40, 40],
-                    iconAnchor: [20, 20]
+                    html: `
+                        <div class="crosshair-avatar-container ${sosClass}">
+                            <div class="crosshair-ring"></div>
+                            <div class="crosshair-point"></div>
+                            <div class="avatar-tag">
+                                <span>${member.avatar || '🏕️'}</span>
+                                <span>${member.name}</span>
+                            </div>
+                        </div>
+                    `,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
                 });
 
                 const marker = L.marker([member.lat, member.lng], { icon: customIcon });
                 const popupContent = `
                     <div class="text-slate-900 p-2 min-w-[160px]">
-                        <div class="font-bold text-sm">${member.name} ${member.isSOS ? '🚨(SOS求救中)' : ''}</div>
+                        <div class="font-bold text-sm flex items-center gap-1">${member.avatar || '🏕️'} ${member.name} ${member.isSOS ? '🚨(SOS)' : ''}</div>
                         <div class="text-xs text-slate-600 mt-1">狀態：${member.status}</div>
-                        <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="mt-3 block bg-amber-500 text-slate-950 font-bold text-center text-xs py-2 px-3 rounded-xl shadow transition">
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="mt-3 block bg-yellow-500 text-slate-950 font-bold text-center text-xs py-2 px-3 rounded-xl shadow transition">
                             🧭 一鍵導航去會合
                         </a>
                     </div>
@@ -240,7 +306,6 @@
 
                 if (member.isSOS && !isMe) sosTarget = member;
 
-                // 渲染清單 (不重複呈現自己)
                 if (!isMe) {
                     const distMeters = getDistanceInMeters(myLat, myLng, member.lat, member.lng);
                     const distanceStr = distMeters > 1000 ? (distMeters/1000).toFixed(1) + ' 公里' : distMeters + ' 公尺';
@@ -255,10 +320,10 @@
                                         ${member.isSOS ? '<span class="text-xs font-bold text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded">SOS!</span>' : ''}
                                     </div>
                                     <p class="text-xs text-slate-300 mt-0.5">${member.status}</p>
-                                    <p class="text-xs text-emerald-400 font-bold mt-0.5">距離: ${distanceStr}</p>
+                                    <p class="text-xs text-yellow-400 font-bold mt-0.5">距離你: ${distanceStr}</p>
                                 </div>
                             </div>
-                            <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="nav-pulse-btn bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg shrink-0">
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="nav-pulse-btn bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg shrink-0">
                                 🧭 導航
                             </a>
                         </div>
@@ -267,12 +332,12 @@
                 }
             });
 
-            // SOS 橫幅觸發
+            // SOS 提醒
             const sosBanner = document.getElementById('sosBanner');
             if (sosTarget) {
                 sosBanner.classList.remove('hidden');
                 document.getElementById('sosBannerTitle').innerText = `🚨 ${sosTarget.name} 發出了 SOS 求救！`;
-                document.getElementById('sosBannerDesc').innerText = `目前位置距離你約 ${getDistanceInMeters(myLat, myLng, sosTarget.lat, sosTarget.lng)} 公尺！`;
+                document.getElementById('sosBannerDesc').innerText = `距離約 ${getDistanceInMeters(myLat, myLng, sosTarget.lat, sosTarget.lng)} 公尺！`;
                 document.getElementById('sosLocateBtn').onclick = () => {
                     map.flyTo([sosTarget.lat, sosTarget.lng], 17, { animate: true });
                 };
@@ -281,16 +346,27 @@
             }
         }
 
-        // 定位追蹤
+        // 高精度 GPS 定位
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition((pos) => {
                 myLat = pos.coords.latitude;
                 myLng = pos.coords.longitude;
+                document.getElementById('gpsCoordsText').innerText = `GPS: ${myLat.toFixed(4)}, ${myLng.toFixed(4)}`;
                 syncToFirebase();
             }, (err) => console.warn(err), { enableHighAccuracy: true });
         }
 
-        // 輸入控制
+        // Emoji 切換函式
+        window.selectEmoji = function(char) {
+            myAvatar = char;
+            document.getElementById('currentAvatarDisplay').innerText = char;
+            syncToFirebase();
+        };
+
+        window.setStatus = function(text) {
+            document.getElementById('statusInput').value = text;
+        };
+
         document.getElementById('userNameInput').addEventListener('change', (e) => {
             myName = e.target.value.trim() || '隊員';
             syncToFirebase();
@@ -302,16 +378,13 @@
             syncToFirebase();
         });
 
-        // 發射 SOS 按鈕
         document.getElementById('sosTriggerBtn').addEventListener('click', () => {
             isSOS = !isSOS;
             myStatus = isSOS ? '🚨 緊急求救中！需要協助！' : '🎒 剛出發';
             document.getElementById('sosTriggerBtn').innerText = isSOS ? '❌ 取消 SOS 求救' : '🚨 發射 SOS 求救';
-            document.getElementById('sosTriggerBtn').classList.toggle('bg-slate-700');
             syncToFirebase();
         });
 
-        // 傳送狀態
         document.getElementById('sendBtn').addEventListener('click', () => {
             const val = document.getElementById('statusInput').value.trim();
             if (val) {
@@ -321,12 +394,10 @@
             }
         });
 
-        // 回到自己位置
         document.getElementById('recenterBtn').addEventListener('click', () => {
             map.flyTo([myLat, myLng], 16, { animate: true });
         });
 
-        // 面板收合
         const bottomSheet = document.getElementById('bottomSheet');
         let isExpanded = true;
         document.getElementById('sheetHandle').addEventListener('click', () => {
