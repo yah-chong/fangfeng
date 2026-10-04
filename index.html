@@ -26,7 +26,6 @@
             transition: transform 0.2s;
         }
         .custom-avatar-icon:hover { transform: scale(1.15); }
-        /* 超顯眼導航按鈕動態呼吸光暈 */
         .nav-pulse-btn {
             animation: nav-pulse 2s infinite;
         }
@@ -41,6 +40,11 @@
 
     <!-- 全螢幕地圖 -->
     <div id="map" class="absolute inset-0"></div>
+
+    <!-- 一鍵定位隊長按鈕 -->
+    <button id="recenterBtn" class="absolute bottom-28 right-4 z-10 bg-slate-900/90 hover:bg-slate-800 text-emerald-400 p-3 rounded-full shadow-xl border border-emerald-500/40 flex items-center justify-center text-xl transition active:scale-95 pointer-events-auto" title="回到我的位置">
+        🎯
+    </button>
 
     <!-- 頂部標題與隱私開關 -->
     <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
@@ -95,10 +99,10 @@
                 </div>
             </div>
 
-            <!-- 隊友即時距離與超級顯眼導航清單 -->
+            <!-- 隊友即時距離與導航清單 -->
             <div>
                 <div class="flex justify-between items-center mb-2">
-                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase">小隊員即時雷達 (群聚自動打包)</h2>
+                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase">小隊員即時雷達</h2>
                     <span id="memberCount" class="text-xs text-emerald-400 font-semibold">線上: 4人</span>
                 </div>
                 <div id="memberList" class="space-y-2.5">
@@ -122,7 +126,6 @@
             attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        // MarkerCluster 群組初始化
         const markersGroup = L.markerClusterGroup({
             maxClusterRadius: 50,
             spiderfyOnMaxZoom: true,
@@ -131,23 +134,34 @@
         });
         map.addLayer(markersGroup);
 
-        // 模擬隊友資料
+        // 隊員資料 (隊長預設經緯度會由真實 GPS 自動覆蓋)
         let teammates = [
-            { id: 1, name: '阿忠 (你)', avatar: '🏕️', lat: 22.6273, lng: 120.3014, status: '🎒 剛出發', signal: 'green', timeAgo: '即時' },
+            { id: 1, name: '阿忠 (隊長/你)', avatar: '🏕️', lat: 22.6273, lng: 120.3014, status: '🎒 剛出發', signal: 'green', timeAgo: '即時 GPS' },
             { id: 2, name: '小明', avatar: '🥾', lat: 22.6295, lng: 120.3040, status: '💦 休息喝水', signal: 'green', timeAgo: '即時' },
-            { id: 3, name: '老王', avatar: '🎒', lat: 22.6250, lng: 120.2980, status: '🪨 鞋帶鬆了', signal: 'yellow', timeAgo: '💤 顯示 3 分鐘前最後已知位置' },
+            { id: 3, name: '老王', avatar: '🎒', lat: 22.6250, lng: 120.2980, status: '🪨 鞋帶鬆了', signal: 'yellow', timeAgo: '💤 顯示 3 分鐘前最後位置' },
             { id: 4, name: '小美', avatar: '🏮', lat: 22.6310, lng: 120.2950, status: '🔥 抵達集結點', signal: 'green', timeAgo: '即時' }
         ];
 
-        let myStatus = '🎒 剛出發';
+        // 計算兩點間距離 (公尺)
+        function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return Math.round(R * c);
+        }
 
         function renderMapAndList() {
             markersGroup.clearLayers();
             const listContainer = document.getElementById('memberList');
             listContainer.innerHTML = '';
 
+            const leader = teammates[0];
+
             teammates.forEach(member => {
-                // 自訂地圖大頭貼圖示
                 const customIcon = L.divIcon({
                     className: '',
                     html: `<div class="custom-avatar-icon w-10 h-10">${member.avatar}</div>`,
@@ -157,7 +171,6 @@
 
                 const marker = L.marker([member.lat, member.lng], { icon: customIcon });
                 
-                // 彈出視窗：設計成超顯眼的全寬導航按鈕
                 const popupContent = `
                     <div class="text-slate-900 p-2 min-w-[160px]">
                         <div class="font-bold text-sm flex items-center gap-1">${member.avatar} ${member.name}</div>
@@ -171,11 +184,11 @@
                 marker.bindPopup(popupContent);
                 markersGroup.addLayer(marker);
 
-                // 計算距離
-                const distance = member.id === 1 ? '你本人' : '約 ' + (Math.abs(member.lat - 22.6273) * 111000).toFixed(0) + ' 公尺';
+                // 計算精確距離
+                const distMeters = getDistanceInMeters(leader.lat, leader.lng, member.lat, member.lng);
+                const distanceStr = member.id === 1 ? '你本人' : (distMeters > 1000 ? (distMeters/1000).toFixed(1) + ' 公里' : distMeters + ' 公尺');
                 const signalDot = member.signal === 'green' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse';
 
-                // 渲染下方面板清單（將導航按鈕改為超顯眼的橙色發光大按鈕）
                 if (member.id !== 1) {
                     const itemHTML = `
                         <div class="bg-slate-800 p-3.5 rounded-2xl border border-slate-700/80 flex items-center justify-between shadow-md">
@@ -184,14 +197,13 @@
                                 <div>
                                     <div class="flex items-center space-x-1.5">
                                         <span class="text-sm font-bold text-slate-100">${member.name}</span>
-                                        <span class="w-2 h-2 rounded-full ${signalDot}" title="訊號狀態"></span>
+                                        <span class="w-2 h-2 rounded-full ${signalDot}"></span>
                                     </div>
                                     <p class="text-xs text-slate-300 mt-0.5">${member.status}</p>
-                                    <p class="text-xs text-emerald-400 font-bold mt-0.5">距離: ${distance}</p>
+                                    <p class="text-xs text-emerald-400 font-bold mt-0.5">距離隊長: ${distanceStr}</p>
                                     ${member.signal === 'yellow' ? '<p class="text-[10px] text-amber-400/90 mt-0.5">💤 顯示 3 分鐘前最後位置</p>' : ''}
                                 </div>
                             </div>
-                            <!-- 升級後的超顯眼「一鍵導航會合」按鈕 -->
                             <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="nav-pulse-btn bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex flex-col items-center justify-center gap-0.5 shrink-0">
                                 <span class="text-base">🧭</span>
                                 <span>一鍵導航</span>
@@ -203,9 +215,40 @@
             });
         }
 
-        renderMapAndList();
+        // 調用手機真實 GPS 定位
+        let isFirstGPS = true;
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    teammates[0].lat = lat;
+                    teammates[0].lng = lng;
 
-        // 語音轉文字功能設定 (Web Speech API)
+                    if (isFirstGPS) {
+                        map.setView([lat, lng], 16);
+                        isFirstGPS = false;
+                    }
+                    renderMapAndList();
+                },
+                (error) => {
+                    console.warn("GPS 定位取得失敗，將使用預設位置", error);
+                    renderMapAndList();
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        } else {
+            renderMapAndList();
+        }
+
+        // 重新對準隊長位置
+        document.getElementById('recenterBtn').addEventListener('click', () => {
+            const leader = teammates[0];
+            map.flyTo([leader.lat, leader.lng], 16, { animate: true });
+        });
+
+        // 語音轉文字
         const voiceBtn = document.getElementById('voiceBtn');
         const statusInput = document.getElementById('statusInput');
         const micStatus = document.getElementById('micStatus');
@@ -214,40 +257,24 @@
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             recognition.lang = 'zh-TW';
-            recognition.interimResults = false;
-            recognition.maxAlternatives = 1;
 
             voiceBtn.addEventListener('click', () => {
                 recognition.start();
                 micStatus.classList.remove('hidden');
-                voiceBtn.classList.add('bg-red-600', 'text-white');
             });
 
             recognition.onresult = (event) => {
-                const speechResult = event.results[0][0].transcript;
-                statusInput.value = speechResult;
+                statusInput.value = event.results[0][0].transcript;
                 micStatus.classList.add('hidden');
-                voiceBtn.classList.remove('bg-red-600', 'text-white');
             };
 
-            recognition.onerror = () => {
-                micStatus.classList.add('hidden');
-                voiceBtn.classList.remove('bg-red-600', 'text-white');
-                alert('語音辨識發生錯誤，請再試一次或手動輸入。');
-            };
-
-            recognition.onend = () => {
-                micStatus.classList.add('hidden');
-                voiceBtn.classList.remove('bg-red-600', 'text-white');
-            };
+            recognition.onend = () => micStatus.classList.add('hidden');
+            recognition.onerror = () => micStatus.classList.add('hidden');
         } else {
             voiceBtn.style.display = 'none';
         }
 
-        // 發送與快捷狀態設定
-        function setStatus(text) {
-            statusInput.value = text;
-        }
+        function setStatus(text) { statusInput.value = text; }
 
         document.getElementById('sendBtn').addEventListener('click', () => {
             const val = statusInput.value.trim();
@@ -255,22 +282,15 @@
                 teammates[0].status = val;
                 renderMapAndList();
                 statusInput.value = '';
-                alert('狀態已更新發送！');
             }
         });
 
-        // 面板收合互動
+        // 面板收合
         const bottomSheet = document.getElementById('bottomSheet');
-        const sheetHandle = document.getElementById('sheetHandle');
         let isExpanded = true;
-
-        sheetHandle.addEventListener('click', () => {
+        document.getElementById('sheetHandle').addEventListener('click', () => {
             isExpanded = !isExpanded;
-            if (isExpanded) {
-                bottomSheet.style.transform = 'translateY(0)';
-            } else {
-                bottomSheet.style.transform = 'translateY(calc(100% - 70px))';
-            }
+            bottomSheet.style.transform = isExpanded ? 'translateY(0)' : 'translateY(calc(100% - 70px))';
         });
     </script>
 </body>
