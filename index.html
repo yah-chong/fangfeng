@@ -1,235 +1,273 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>放風 - 戶外探險即時地圖</title>
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { background-color: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        #map { width: 100%; height: 100vh; z-index: 1; }
-        
-        /* 參考圖片設計：經典藍色定位針 + 上方對話框暱稱 */
-        .custom-pin-container {
-            position: relative;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            transform: translate(-50%, -100%);
-        }
-        .pin-bubble {
-            background: #ffffff;
-            color: #0f172a;
-            font-weight: 900;
-            font-size: 13px;
-            padding: 3px 10px;
-            border-radius: 6px;
-            border: 2px solid #0f172a;
-            white-space: nowrap;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-            margin-bottom: 2px;
-        }
-        .pin-icon {
-            width: 28px;
-            height: 38px;
-            filter: drop-shadow(0 3px 3px rgba(0,0,0,0.4));
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>美味餐車即時位置追蹤</title>
+  
+  <!-- Leaflet 地圖樣式 (免費地圖套件) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 15px; background: #fafafa; max-width: 600px; margin: 0 auto; }
+    .header { text-align: center; padding: 10px; }
+    .status-badge { display: inline-block; padding: 6px 16px; border-radius: 20px; font-weight: bold; font-size: 18px; background: #eee; }
+    
+    /* 位置選擇器樣式 */
+    .location-box { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin: 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .location-box label { font-weight: bold; font-size: 15px; display: block; margin-bottom: 6px; color: #333; }
+    select { width: 100%; padding: 10px; font-size: 15px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+
+    /* 距離顯示方塊樣式 */
+    .distance-box { background: #e2f0d9; border-left: 5px solid #385723; padding: 12px; margin: 15px 0; border-radius: 4px; font-size: 18px; font-weight: bold; color: #274e13; display: flex; align-items: center; justify-content: space-between; }
+    
+    .broadcast-box { background: #fff3cd; border-left: 5px solid #ffc107; padding: 12px; margin: 15px 0; border-radius: 4px; }
+    #map { height: 320px; width: 100%; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .nav-btn { display: block; width: 100%; padding: 15px 0; margin-top: 15px; background: #28a745; color: white; text-align: center; font-size: 18px; font-weight: bold; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px rgba(40,167,69,0.3); }
+  </style>
+
+  <!-- Firebase & Leaflet 地圖 SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
-<body class="relative overflow-hidden h-screen">
+<body>
 
-    <!-- 全螢幕地圖 -->
-    <div id="map" class="absolute inset-0"></div>
+  <div class="header">
+    <h2>🍔 美味餐車專屬定位頁面</h2>
+    <div id="statusBadge" class="status-badge">🔄 讀取狀態中...</div>
+  </div>
 
-    <!-- 步驟 1：極簡登入卡片 -->
-    <div id="loginCard" class="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-        <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-2xl w-full max-w-sm space-y-5">
-            <div class="text-center space-y-1">
-                <h1 class="text-2xl font-black text-sky-400 tracking-wider">🏕️ 放風</h1>
-                <p class="text-xs text-slate-400">輸入活動代號與暱稱即可開始連線</p>
-            </div>
-            
-            <div class="space-y-3">
-                <div>
-                    <label class="text-xs text-slate-400 font-medium mb-1 block">活動名稱代號</label>
-                    <input type="text" id="inputRoomId" placeholder="例如: taiwan 168" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-400 font-bold">
-                </div>
-                <div>
-                    <label class="text-xs text-slate-400 font-medium mb-1 block">你的暱稱</label>
-                    <input type="text" id="inputUserName" placeholder="例如: 阿忠" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-400 font-bold">
-                </div>
-            </div>
+  <!-- 老闆最新廣播 -->
+  <div class="broadcast-box">
+    <strong>📢 最新公告：</strong>
+    <span id="broadcastText">目前無廣播訊息</span>
+  </div>
 
-            <button id="startBtn" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold py-3 rounded-xl shadow-lg shadow-sky-500/20 transition active:scale-95">
-                進入放風地圖
-            </button>
-        </div>
-    </div>
+  <!-- 位置選擇選單 (最新與歷史選單) -->
+  <div class="location-box">
+    <label for="locationSelect">📍 選擇餐車地點：</label>
+    <select id="locationSelect" onchange="onLocationSelectChange()">
+      <option value="latest">🔴 讀取最新位置中...</option>
+    </select>
+  </div>
 
-    <!-- 頂部極簡資訊橫條 -->
-    <div id="topHeader" class="hidden absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
-        <div class="bg-slate-900/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-800 shadow-lg pointer-events-auto flex items-center space-x-2">
-            <span class="text-xs text-slate-400">活動:</span>
-            <span id="displayRoomId" class="text-sm font-bold text-sky-400"></span>
-        </div>
-        <div class="bg-slate-900/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-800 shadow-lg pointer-events-auto flex items-center space-x-2">
-            <span id="displayUserName" class="text-sm font-bold text-slate-200"></span>
-        </div>
-    </div>
+  <!-- 距離顯示區塊 -->
+  <div class="distance-box">
+    <span>📍 您與目標位置距離：</span>
+    <span id="distanceText">正在取得您的 GPS 定位...</span>
+  </div>
 
-    <!-- 底部點擊導航卡片 -->
-    <div id="navCard" class="hidden absolute bottom-6 left-4 right-4 z-20 bg-slate-900/95 backdrop-blur-xl border border-slate-800 p-4 rounded-2xl shadow-2xl flex items-center justify-between">
-        <div>
-            <div class="flex items-center space-x-2">
-                <span id="targetName" class="text-base font-bold text-slate-100"></span>
-            </div>
-            <p id="targetDistance" class="text-xs text-sky-400 font-semibold mt-0.5"></p>
-        </div>
-        <a id="targetNavBtn" href="#" target="_blank" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-xs transition shadow-lg flex items-center gap-1 shrink-0">
-            <span>🧭</span>
-            <span>開車導航去會合</span>
-        </a>
-    </div>
+  <!-- 地圖呈現 -->
+  <div id="map"></div>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Google Maps 一鍵導航按鈕 -->
+  <a id="navBtn" href="#" target="_blank" class="nav-btn">🚗  出發 GO GO GO  (開啟導航 Google 地圖)  </a>
 
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, onValue, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+  <script>
+    // ⚠️ 請記得將 "YOUR_API_KEY" 與 "YOUR_APP_ID" 替換成與老闆端相同的實際數值。
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY", 
+      authDomain: "food-truck-1f6aa.firebaseapp.com",
+      databaseURL: "https://food-truck-1f6aa-default-rtdb.firebaseio.com",
+      projectId: "food-truck-1f6aa",
+      storageBucket: "food-truck-1f6aa.firebasestorage.app",
+      messagingSenderId: "1061981192488",
+      appId: "YOUR_APP_ID" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database().ref('foodtruck');
 
-        const firebaseConfig = {
-            databaseURL: "https://fangfeng-default-rtdb.asia-southeast1.firebasedatabase.app"
-        };
+    // 初始化 Leaflet 地圖 (預設中心點設為高雄/台灣)
+    const map = L.map('map').setView([22.627, 120.358], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
 
-        const app = initializeApp(firebaseConfig);
-        const database = getDatabase(app);
+    let marker = null;
+    let userLat = null;
+    let userLng = null;
+    
+    // 當前顯示在地圖與導航上的座標與名稱
+    let displayLat = null;
+    let displayLng = null;
+    let displayTitle = "餐車目前位置";
 
-        const myUserId = 'user_' + Math.random().toString(36).substring(2, 9);
-        let myRoomId = '';
-        let myName = '';
-        let myLat = 22.6273, myLng = 120.3014;
+    // 儲存即時座標與歷史紀錄快照
+    let latestRealtimeLoc = { lat: null, lng: null };
+    let historyList = [];
 
-        const map = L.map('map', { zoomControl: false }).setView([myLat, myLng], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19, attribution: '© OpenStreetMap'
-        }).addTo(map);
+    // 計算兩點距離的函數 (Haversine 公式)
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371; // 地球半徑 (km)
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c; // 回傳公里數
+    }
 
-        let onlineMembers = {};
-        let markersMap = {};
+    // 更新 UI（地圖標記、視角、距離、導航網址）
+    function updateMapAndUI(lat, lng, title) {
+      if (!lat || !lng) return;
 
-        function getDistanceText(lat1, lon1, lat2, lon2) {
-            const R = 6371000;
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            const meters = Math.round(R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))));
-            return meters > 1000 ? `距離你 ${(meters/1000).toFixed(1)} 公里` : `距離你 ${meters} 公尺`;
+      displayLat = lat;
+      displayLng = lng;
+      displayTitle = title || "餐車位置";
+
+      // 1. 更新地圖中心與標記
+      map.setView([displayLat, displayLng], 17);
+      if (marker) {
+        marker.setLatLng([displayLat, displayLng]);
+        marker.getPopup().setContent(`<b>${displayTitle}</b>`);
+      } else {
+        marker = L.marker([displayLat, displayLng]).addTo(map).bindPopup(`<b>${displayTitle}</b>`).openPopup();
+      }
+
+      // 2. 更新 Google Maps 導航按鈕連結
+      const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${displayLat},${displayLng}`;
+      document.getElementById('navBtn').href = navUrl;
+
+      // 3. 更新距離顯示
+      updateDistanceUI();
+    }
+
+    // 更新距離顯示文字
+    function updateDistanceUI() {
+      const distanceEl = document.getElementById('distanceText');
+      if (userLat === null || userLng === null) {
+        distanceEl.innerText = "無法取得您的定位 (請授權 GPS)";
+        return;
+      }
+      if (displayLat === null || displayLng === null) {
+        distanceEl.innerText = "等待餐車位置中...";
+        return;
+      }
+
+      const distKm = calculateDistance(userLat, userLng, displayLat, displayLng);
+      if (distKm < 1) {
+        distanceEl.innerText = `${Math.round(distKm * 1000)} 公尺`;
+      } else {
+        distanceEl.innerText = `${distKm.toFixed(2)} 公里`;
+      }
+    }
+
+    // 1. 持續監聽使用者的即時 GPS 位置
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          userLat = position.coords.latitude;
+          userLng = position.coords.longitude;
+          updateDistanceUI();
+        },
+        (error) => {
+          console.warn("無法取得使用者位置: ", error.message);
+          document.getElementById('distanceText').innerText = "定位權限被拒絕或失敗";
+        },
+        { enableHighAccuracy: true }
+      );
+    } else {
+      document.getElementById('distanceText').innerText = "您的瀏覽器不支援定位功能";
+    }
+
+    // 2. 監聽 Firebase 主狀態與即時位置
+    db.on('value', (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      if (data.status) {
+        document.getElementById('statusBadge').innerText = data.status;
+      }
+      if (data.broadcast) {
+        document.getElementById('broadcastText').innerText = data.broadcast;
+      }
+
+      // 記錄即時 GPS 座標
+      if (data.lat && data.lng) {
+        latestRealtimeLoc = { lat: data.lat, lng: data.lng };
+
+        // 如果顧客選單目前在「最新位置」，且沒有歷史紀錄可讀時，即時更新
+        const select = document.getElementById('locationSelect');
+        if (select.value === "latest_rt") {
+          updateMapAndUI(data.lat, data.lng, "🔴 餐車即時位置");
         }
+      }
+    });
 
-        function syncToFirebase() {
-            if (!myRoomId) return;
-            const userRef = ref(database, `rooms/${myRoomId}/${myUserId}`);
-            set(userRef, {
-                id: myUserId,
-                name: myName,
-                lat: myLat,
-                lng: myLng,
-                lastSeen: Date.now()
-            });
-            onDisconnect(userRef).remove();
-        }
+    // 3. 讀取最新 10 筆歷史紀錄並動態更新選單
+    db.child('history').orderByChild('timestamp').limitToLast(10).on('value', (snapshot) => {
+      const select = document.getElementById('locationSelect');
+      const currentSelectedValue = select.value; // 記錄顧客當前選取的項目
 
-        function listenRoomData() {
-            const roomRef = ref(database, `rooms/${myRoomId}`);
-            onValue(roomRef, (snapshot) => {
-                onlineMembers = snapshot.val() || {};
-                renderMap();
-            });
-        }
-
-        function renderMap() {
-            Object.values(markersMap).forEach(m => map.removeLayer(m));
-            markersMap = {};
-
-            const membersArr = Object.values(onlineMembers);
-
-            membersArr.forEach(member => {
-                const isMe = member.id === myUserId;
-                
-                // 使用 SVG 建立經典藍色定位針，上方帶有如同參考圖片的對話框暱稱
-                const customIcon = L.divIcon({
-                    className: '',
-                    html: `
-                        <div class="custom-pin-container">
-                            <div class="pin-bubble">${member.name}${isMe ? ' (你)' : ''}</div>
-                            <svg class="pin-icon" viewBox="0 0 24 24" fill="#3b82f6" stroke="#ffffff" stroke-width="1.5">
-                                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"></path>
-                                <circle cx="12" cy="9" r="3.5" fill="#ffffff"></circle>
-                            </svg>
-                        </div>
-                    `,
-                    iconSize: [0, 0],
-                    iconAnchor: [0, 0]
-                });
-
-                const marker = L.marker([member.lat, member.lng], { icon: customIcon }).addTo(map);
-                markersMap[member.id] = marker;
-
-                marker.on('click', () => {
-                    if (isMe) {
-                        document.getElementById('navCard').classList.add('hidden');
-                        return;
-                    }
-                    const distStr = getDistanceText(myLat, myLng, member.lat, member.lng);
-                    document.getElementById('targetName').innerText = member.name;
-                    document.getElementById('targetDistance').innerText = distStr;
-                    document.getElementById('targetNavBtn').href = `https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}&travelmode=driving`;
-                    document.getElementById('navCard').classList.remove('hidden');
-                });
-            });
-        }
-
-        document.getElementById('startBtn').addEventListener('click', () => {
-            const roomVal = document.getElementById('inputRoomId').value.trim();
-            const nameVal = document.getElementById('inputUserName').value.trim();
-
-            if (!roomVal || !nameVal) {
-                alert('請輸入活動名稱代號與暱稱！');
-                return;
-            }
-
-            myRoomId = roomVal.toLowerCase().replace(/\s+/g, '_');
-            myName = nameVal;
-
-            document.getElementById('displayRoomId').innerText = roomVal;
-            document.getElementById('displayUserName').innerText = nameVal;
-
-            document.getElementById('loginCard').classList.add('hidden');
-            document.getElementById('topHeader').classList.remove('hidden');
-
-            if ("geolocation" in navigator) {
-                navigator.geolocation.watchPosition((pos) => {
-                    myLat = pos.coords.latitude;
-                    myLng = pos.coords.longitude;
-                    map.setView([myLat, myLng], 15);
-                    syncToFirebase();
-                }, (err) => console.warn(err), { enableHighAccuracy: true });
-            }
-
-            listenRoomData();
-            syncToFirebase();
+      historyList = [];
+      if (snapshot.exists()) {
+        snapshot.forEach((child) => {
+          historyList.push({ key: child.key, ...child.val() });
         });
+        historyList.reverse(); // 最新筆擺最前面
+      }
 
-        map.on('click', () => {
-            document.getElementById('navCard').classList.add('hidden');
-        });
-    </script>
+      // 重新繪製選單選項
+      select.innerHTML = '';
+
+      if (historyList.length > 0) {
+        // 選項 1：最新打卡位置（預設第一順位）
+        const topHistory = historyList[0];
+        const latestOption = document.createElement('option');
+        latestOption.value = `hist_0`;
+        latestOption.textContent = `📍 【最新】${topHistory.note} (${topHistory.timeStr || ''})`;
+        select.appendChild(latestOption);
+
+        // 選項 2~10：其餘舊地點
+        for (let i = 1; i < historyList.length; i++) {
+          const item = historyList[i];
+          const opt = document.createElement('option');
+          opt.value = `hist_${i}`;
+          opt.textContent = `📜 ${item.note} (${item.timeStr || ''})`;
+          select.appendChild(opt);
+        }
+      } else if (latestRealtimeLoc.lat) {
+        // 若無歷史打卡，備用：顯示即時 GPS
+        const opt = document.createElement('option');
+        opt.value = "latest_rt";
+        opt.textContent = "📍 最新即時位置";
+        select.appendChild(opt);
+      } else {
+        const opt = document.createElement('option');
+        opt.value = "none";
+        opt.textContent = "⚠️ 尚無任何位置資料";
+        select.appendChild(opt);
+      }
+
+      // 保持顧客原本選取的項目，若無選取則預設選取最新第一筆
+      if (currentSelectedValue && Array.from(select.options).some(o => o.value === currentSelectedValue)) {
+        select.value = currentSelectedValue;
+      } else {
+        select.selectedIndex = 0;
+        // 預設將地圖切換至最新的那一筆資料
+        onLocationSelectChange();
+      }
+    });
+
+    // 4. 當顧客切換選單時觸發
+    function onLocationSelectChange() {
+      const select = document.getElementById('locationSelect');
+      const val = select.value;
+
+      if (val.startsWith('hist_')) {
+        const index = parseInt(val.split('_')[1]);
+        const target = historyList[index];
+        if (target) {
+          const title = index === 0 ? `📍 最新位置：${target.note}` : `📜 歷史位置：${target.note}`;
+          updateMapAndUI(target.lat, target.lng, title);
+        }
+      } else if (val === "latest_rt" && latestRealtimeLoc.lat) {
+        updateMapAndUI(latestRealtimeLoc.lat, latestRealtimeLoc.lng, "🔴 餐車即時位置");
+      }
+    }
+  </script>
 </body>
 </html>
