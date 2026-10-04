@@ -6,7 +6,6 @@
     <title>放風 - 戶外探險小隊即時地圖</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Leaflet MarkerCluster CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <!-- Tailwind CSS -->
@@ -25,10 +24,15 @@
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
             transition: transform 0.2s;
         }
-        .custom-avatar-icon:hover { transform: scale(1.15); }
-        .nav-pulse-btn {
-            animation: nav-pulse 2s infinite;
+        .custom-avatar-icon.sos-active {
+            border-color: #ef4444;
+            animation: sos-pulse 1s infinite alternate;
         }
+        @keyframes sos-pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            100% { transform: scale(1.25); box-shadow: 0 0 0 14px rgba(239, 68, 68, 0); }
+        }
+        .nav-pulse-btn { animation: nav-pulse 2s infinite; }
         @keyframes nav-pulse {
             0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
             70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
@@ -41,108 +45,127 @@
     <!-- 全螢幕地圖 -->
     <div id="map" class="absolute inset-0"></div>
 
+    <!-- SOS 全螢幕緊急通報橫幅 (預設隱藏) -->
+    <div id="sosBanner" class="hidden absolute top-16 left-4 right-4 z-30 bg-red-600/95 text-white p-3.5 rounded-2xl shadow-2xl border border-red-400 flex justify-between items-center animate-bounce">
+        <div class="flex items-center space-x-2">
+            <span class="text-2xl">🚨</span>
+            <div>
+                <h3 class="font-extrabold text-sm" id="sosBannerTitle">緊急救援通報！</h3>
+                <p class="text-xs opacity-90" id="sosBannerDesc">有隊友發出 SOS 訊號，請立即前往支援！</p>
+            </div>
+        </div>
+        <button id="sosLocateBtn" class="bg-white text-red-700 font-extrabold text-xs px-3 py-2 rounded-xl shadow hover:bg-slate-100">
+            地圖瞄準
+        </button>
+    </div>
+
     <!-- 一鍵定位隊長按鈕 -->
     <button id="recenterBtn" class="absolute bottom-28 right-4 z-10 bg-slate-900/90 hover:bg-slate-800 text-emerald-400 p-3 rounded-full shadow-xl border border-emerald-500/40 flex items-center justify-center text-xl transition active:scale-95 pointer-events-auto" title="回到我的位置">
         🎯
     </button>
 
-    <!-- 頂部標題與隱私開關 -->
+    <!-- 頂部標題與房號設定 -->
     <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
-        <div class="bg-slate-900/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-emerald-500/30 shadow-lg pointer-events-auto flex items-center space-x-2">
+        <div class="bg-slate-900/90 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-emerald-500/30 shadow-lg pointer-events-auto flex items-center space-x-2">
             <span class="text-xl">🏕️</span>
             <div>
-                <h1 class="text-base font-bold text-emerald-400 tracking-wider">放風</h1>
-                <p class="text-xs text-slate-400">小隊即時雷達站</p>
+                <h1 class="text-xs font-bold text-emerald-400 tracking-wider">放風小隊</h1>
+                <div class="flex items-center gap-1 mt-0.5">
+                    <span class="text-[10px] text-slate-400">房號:</span>
+                    <input type="text" id="roomIdInput" value="fangfeng888" class="bg-slate-800 text-xs text-emerald-300 font-bold w-20 px-1.5 py-0.5 rounded border border-slate-700 focus:outline-none focus:border-emerald-500">
+                </div>
             </div>
         </div>
 
         <div class="bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700 shadow-lg pointer-events-auto flex items-center space-x-2">
-            <span class="text-xs text-slate-300 font-medium">分享定位</span>
-            <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" id="gpsToggle" class="sr-only peer" checked>
-                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-            </label>
+            <span class="text-xs text-slate-300 font-medium">暱稱:</span>
+            <input type="text" id="userNameInput" value="阿忠隊長" class="bg-slate-800 text-xs text-slate-100 font-bold w-16 px-1.5 py-0.5 rounded border border-slate-700 focus:outline-none">
         </div>
     </div>
 
     <!-- 底部「懸浮快收」面板 -->
     <div id="bottomSheet" class="absolute bottom-0 left-0 right-0 z-20 bg-slate-900/95 backdrop-blur-xl border-t border-emerald-500/30 rounded-t-3xl shadow-2xl transition-transform duration-300 flex flex-col max-h-[70vh]">
         
-        <!-- 拖曳/收合把手 -->
         <div id="sheetHandle" class="w-full py-3 flex justify-center items-center cursor-pointer">
             <div class="w-12 h-1.5 bg-slate-700 rounded-full"></div>
         </div>
 
         <div class="px-5 pb-6 overflow-y-auto space-y-4">
             
-            <!-- 狀態與語音留言板區 -->
-            <div class="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 space-y-2">
+            <!-- 狀態與 SOS 區 -->
+            <div class="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 space-y-2.5">
                 <div class="flex justify-between items-center">
                     <span class="text-xs font-bold text-emerald-400 flex items-center gap-1">
                         <span>💬</span> 我的小隊動態狀態
                     </span>
-                    <span id="micStatus" class="text-[10px] text-slate-400 hidden bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full animate-pulse">🎤 聆聽中...</span>
+                    <button id="sosTriggerBtn" class="bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold px-3 py-1 rounded-xl shadow-lg shadow-red-600/40 flex items-center gap-1 animate-pulse">
+                        🚨 發射 SOS 求救
+                    </button>
                 </div>
                 
                 <div class="flex gap-2">
-                    <input type="text" id="statusInput" placeholder="輸入動態或使用語音..." class="flex-1 bg-slate-900 text-sm border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500">
-                    <button id="voiceBtn" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-xl text-sm transition flex items-center justify-center" title="語音輸入">🎤</button>
+                    <input type="text" id="statusInput" placeholder="輸入動態..." class="flex-1 bg-slate-900 text-sm border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500">
                     <button id="sendBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-lg shadow-emerald-600/30">發送</button>
                 </div>
 
-                <!-- 快捷標籤 -->
                 <div class="flex gap-1.5 overflow-x-auto pt-1 pb-1 text-xs no-scrollbar">
                     <button onclick="setStatus('🎒 剛出發')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🎒 剛出發</button>
                     <button onclick="setStatus('💦 休息中')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">💦 休息中</button>
-                    <button onclick="setStatus('🪨 鞋帶鬆了')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🪨 鞋帶鬆了</button>
                     <button onclick="setStatus('🔥 抵達集結點')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🔥 抵達集結點</button>
                 </div>
             </div>
 
-            <!-- 隊友即時距離與導航清單 -->
+            <!-- 隊友即時清單 -->
             <div>
                 <div class="flex justify-between items-center mb-2">
-                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase">小隊員即時雷達</h2>
-                    <span id="memberCount" class="text-xs text-emerald-400 font-semibold">線上: 4人</span>
+                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase">小隊員即時雷達 (Firebase 連線)</h2>
+                    <span id="memberCount" class="text-xs text-emerald-400 font-semibold">連線中...</span>
                 </div>
-                <div id="memberList" class="space-y-2.5">
-                    <!-- 動態生成隊友清單 -->
-                </div>
+                <div id="memberList" class="space-y-2.5"></div>
             </div>
 
         </div>
     </div>
 
-    <!-- Leaflet & MarkerCluster JS -->
+    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-    <script>
+
+    <!-- Firebase SDK (Version 9+ Module) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        // 公用免費測試 Firebase 即時資料庫設定檔
+        const firebaseConfig = {
+            databaseURL: "https://fangfeng-default-rtdb.asia-southeast1.firebasedatabase.app"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+
+        // 使用者唯一 ID (隨機生成)
+        const myUserId = 'user_' + Math.random().toString(36).substring(2, 9);
+        let myRoomId = document.getElementById('roomIdInput').value.trim() || 'fangfeng888';
+        let myName = document.getElementById('userNameInput').value.trim() || '隊長';
+        let myLat = 22.6273, myLng = 120.3014;
+        let myStatus = '🎒 剛出發';
+        let isSOS = false;
+
         // 初始化地圖
-        const map = L.map('map', { zoomControl: false }).setView([22.6273, 120.3014], 15);
+        const map = L.map('map', { zoomControl: false }).setView([myLat, myLng], 15);
         L.control.zoom({ position: 'topright' }).addTo(map);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap'
+            maxZoom: 19, attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        const markersGroup = L.markerClusterGroup({
-            maxClusterRadius: 50,
-            spiderfyOnMaxZoom: true,
-            showCoverageOnHover: false,
-            zoomToBoundsOnClick: true
-        });
+        const markersGroup = L.markerClusterGroup({ maxClusterRadius: 40 });
         map.addLayer(markersGroup);
 
-        // 隊員資料 (隊長預設經緯度會由真實 GPS 自動覆蓋)
-        let teammates = [
-            { id: 1, name: '阿忠 (隊長/你)', avatar: '🏕️', lat: 22.6273, lng: 120.3014, status: '🎒 剛出發', signal: 'green', timeAgo: '即時 GPS' },
-            { id: 2, name: '小明', avatar: '🥾', lat: 22.6295, lng: 120.3040, status: '💦 休息喝水', signal: 'green', timeAgo: '即時' },
-            { id: 3, name: '老王', avatar: '🎒', lat: 22.6250, lng: 120.2980, status: '🪨 鞋帶鬆了', signal: 'yellow', timeAgo: '💤 顯示 3 分鐘前最後位置' },
-            { id: 4, name: '小美', avatar: '🏮', lat: 22.6310, lng: 120.2950, status: '🔥 抵達集結點', signal: 'green', timeAgo: '即時' }
-        ];
+        let onlineMembers = {};
 
-        // 計算兩點間距離 (公尺)
+        // 距離計算 (公尺)
         function getDistanceInMeters(lat1, lon1, lat2, lon2) {
             const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -150,139 +173,157 @@
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                       Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return Math.round(R * c);
+            return Math.round(R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))));
         }
 
+        // 推送目前數據至 Firebase
+        function syncToFirebase() {
+            const userRef = ref(database, `rooms/${myRoomId}/${myUserId}`);
+            set(userRef, {
+                id: myUserId,
+                name: myName,
+                avatar: isSOS ? '🚨' : '🏕️',
+                lat: myLat,
+                lng: myLng,
+                status: myStatus,
+                isSOS: isSOS,
+                lastSeen: Date.now()
+            });
+            onDisconnect(userRef).remove();
+        }
+
+        // 監聽房間資料變化
+        function listenRoomData() {
+            const roomRef = ref(database, `rooms/${myRoomId}`);
+            onValue(roomRef, (snapshot) => {
+                onlineMembers = snapshot.val() || {};
+                renderMapAndList();
+            });
+        }
+
+        listenRoomData();
+
+        // 渲染地圖與清單
         function renderMapAndList() {
             markersGroup.clearLayers();
             const listContainer = document.getElementById('memberList');
             listContainer.innerHTML = '';
 
-            const leader = teammates[0];
+            const membersArr = Object.values(onlineMembers);
+            document.getElementById('memberCount').innerText = `線上: ${membersArr.length} 人`;
 
-            teammates.forEach(member => {
+            let sosTarget = null;
+
+            membersArr.forEach(member => {
+                const isMe = member.id === myUserId;
+                const sosClass = member.isSOS ? 'sos-active' : '';
+
                 const customIcon = L.divIcon({
                     className: '',
-                    html: `<div class="custom-avatar-icon w-10 h-10">${member.avatar}</div>`,
+                    html: `<div class="custom-avatar-icon ${sosClass} w-10 h-10">${member.avatar || '🏕️'}</div>`,
                     iconSize: [40, 40],
                     iconAnchor: [20, 20]
                 });
 
                 const marker = L.marker([member.lat, member.lng], { icon: customIcon });
-                
                 const popupContent = `
                     <div class="text-slate-900 p-2 min-w-[160px]">
-                        <div class="font-bold text-sm flex items-center gap-1">${member.avatar} ${member.name}</div>
+                        <div class="font-bold text-sm">${member.name} ${member.isSOS ? '🚨(SOS求救中)' : ''}</div>
                         <div class="text-xs text-slate-600 mt-1">狀態：${member.status}</div>
-                        <div class="text-[10px] text-amber-600 mt-0.5">${member.timeAgo}</div>
-                        <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="mt-3 block bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-center text-xs py-2 px-3 rounded-xl shadow-md transition flex items-center justify-center gap-1">
-                            <span>🧭</span> 一鍵導航去會合
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="mt-3 block bg-amber-500 text-slate-950 font-bold text-center text-xs py-2 px-3 rounded-xl shadow transition">
+                            🧭 一鍵導航去會合
                         </a>
                     </div>
                 `;
                 marker.bindPopup(popupContent);
                 markersGroup.addLayer(marker);
 
-                // 計算精確距離
-                const distMeters = getDistanceInMeters(leader.lat, leader.lng, member.lat, member.lng);
-                const distanceStr = member.id === 1 ? '你本人' : (distMeters > 1000 ? (distMeters/1000).toFixed(1) + ' 公里' : distMeters + ' 公尺');
-                const signalDot = member.signal === 'green' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse';
+                if (member.isSOS && !isMe) sosTarget = member;
 
-                if (member.id !== 1) {
+                // 渲染清單 (不重複呈現自己)
+                if (!isMe) {
+                    const distMeters = getDistanceInMeters(myLat, myLng, member.lat, member.lng);
+                    const distanceStr = distMeters > 1000 ? (distMeters/1000).toFixed(1) + ' 公里' : distMeters + ' 公尺';
+
                     const itemHTML = `
-                        <div class="bg-slate-800 p-3.5 rounded-2xl border border-slate-700/80 flex items-center justify-between shadow-md">
+                        <div class="bg-slate-800 p-3.5 rounded-2xl border ${member.isSOS ? 'border-red-500/80 bg-red-950/20' : 'border-slate-700/80'} flex items-center justify-between shadow-md">
                             <div class="flex items-center space-x-3">
-                                <div class="text-2xl bg-slate-700/60 w-11 h-11 rounded-2xl flex items-center justify-center border border-slate-600">${member.avatar}</div>
+                                <div class="text-2xl bg-slate-700/60 w-11 h-11 rounded-2xl flex items-center justify-center border border-slate-600">${member.avatar || '🏕️'}</div>
                                 <div>
                                     <div class="flex items-center space-x-1.5">
                                         <span class="text-sm font-bold text-slate-100">${member.name}</span>
-                                        <span class="w-2 h-2 rounded-full ${signalDot}"></span>
+                                        ${member.isSOS ? '<span class="text-xs font-bold text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded">SOS!</span>' : ''}
                                     </div>
                                     <p class="text-xs text-slate-300 mt-0.5">${member.status}</p>
-                                    <p class="text-xs text-emerald-400 font-bold mt-0.5">距離隊長: ${distanceStr}</p>
-                                    ${member.signal === 'yellow' ? '<p class="text-[10px] text-amber-400/90 mt-0.5">💤 顯示 3 分鐘前最後位置</p>' : ''}
+                                    <p class="text-xs text-emerald-400 font-bold mt-0.5">距離: ${distanceStr}</p>
                                 </div>
                             </div>
-                            <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="nav-pulse-btn bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex flex-col items-center justify-center gap-0.5 shrink-0">
-                                <span class="text-base">🧭</span>
-                                <span>一鍵導航</span>
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="nav-pulse-btn bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg shrink-0">
+                                🧭 導航
                             </a>
                         </div>
                     `;
                     listContainer.insertAdjacentHTML('beforeend', itemHTML);
                 }
             });
+
+            // SOS 橫幅觸發
+            const sosBanner = document.getElementById('sosBanner');
+            if (sosTarget) {
+                sosBanner.classList.remove('hidden');
+                document.getElementById('sosBannerTitle').innerText = `🚨 ${sosTarget.name} 發出了 SOS 求救！`;
+                document.getElementById('sosBannerDesc').innerText = `目前位置距離你約 ${getDistanceInMeters(myLat, myLng, sosTarget.lat, sosTarget.lng)} 公尺！`;
+                document.getElementById('sosLocateBtn').onclick = () => {
+                    map.flyTo([sosTarget.lat, sosTarget.lng], 17, { animate: true });
+                };
+            } else {
+                sosBanner.classList.add('hidden');
+            }
         }
 
-        // 調用手機真實 GPS 定位
-        let isFirstGPS = true;
+        // 定位追蹤
         if ("geolocation" in navigator) {
-            navigator.geolocation.watchPosition(
-                (position) => {
-                    const lat = position.coords.latitude;
-                    const lng = position.coords.longitude;
-                    
-                    teammates[0].lat = lat;
-                    teammates[0].lng = lng;
-
-                    if (isFirstGPS) {
-                        map.setView([lat, lng], 16);
-                        isFirstGPS = false;
-                    }
-                    renderMapAndList();
-                },
-                (error) => {
-                    console.warn("GPS 定位取得失敗，將使用預設位置", error);
-                    renderMapAndList();
-                },
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-            );
-        } else {
-            renderMapAndList();
+            navigator.geolocation.watchPosition((pos) => {
+                myLat = pos.coords.latitude;
+                myLng = pos.coords.longitude;
+                syncToFirebase();
+            }, (err) => console.warn(err), { enableHighAccuracy: true });
         }
 
-        // 重新對準隊長位置
-        document.getElementById('recenterBtn').addEventListener('click', () => {
-            const leader = teammates[0];
-            map.flyTo([leader.lat, leader.lng], 16, { animate: true });
+        // 輸入控制
+        document.getElementById('userNameInput').addEventListener('change', (e) => {
+            myName = e.target.value.trim() || '隊員';
+            syncToFirebase();
         });
 
-        // 語音轉文字
-        const voiceBtn = document.getElementById('voiceBtn');
-        const statusInput = document.getElementById('statusInput');
-        const micStatus = document.getElementById('micStatus');
+        document.getElementById('roomIdInput').addEventListener('change', (e) => {
+            myRoomId = e.target.value.trim() || 'fangfeng888';
+            listenRoomData();
+            syncToFirebase();
+        });
 
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'zh-TW';
+        // 發射 SOS 按鈕
+        document.getElementById('sosTriggerBtn').addEventListener('click', () => {
+            isSOS = !isSOS;
+            myStatus = isSOS ? '🚨 緊急求救中！需要協助！' : '🎒 剛出發';
+            document.getElementById('sosTriggerBtn').innerText = isSOS ? '❌ 取消 SOS 求救' : '🚨 發射 SOS 求救';
+            document.getElementById('sosTriggerBtn').classList.toggle('bg-slate-700');
+            syncToFirebase();
+        });
 
-            voiceBtn.addEventListener('click', () => {
-                recognition.start();
-                micStatus.classList.remove('hidden');
-            });
-
-            recognition.onresult = (event) => {
-                statusInput.value = event.results[0][0].transcript;
-                micStatus.classList.add('hidden');
-            };
-
-            recognition.onend = () => micStatus.classList.add('hidden');
-            recognition.onerror = () => micStatus.classList.add('hidden');
-        } else {
-            voiceBtn.style.display = 'none';
-        }
-
-        function setStatus(text) { statusInput.value = text; }
-
+        // 傳送狀態
         document.getElementById('sendBtn').addEventListener('click', () => {
-            const val = statusInput.value.trim();
+            const val = document.getElementById('statusInput').value.trim();
             if (val) {
-                teammates[0].status = val;
-                renderMapAndList();
-                statusInput.value = '';
+                myStatus = val;
+                syncToFirebase();
+                document.getElementById('statusInput').value = '';
             }
+        });
+
+        // 回到自己位置
+        document.getElementById('recenterBtn').addEventListener('click', () => {
+            map.flyTo([myLat, myLng], 16, { animate: true });
         });
 
         // 面板收合
