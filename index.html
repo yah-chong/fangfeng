@@ -2,212 +2,407 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>山林即時定位與雙向互助導航</title>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>放風 - 戶外探險小隊即時地圖</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #121815; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        #map { width: 100%; height: 100vh; z-index: 1; }
+        
+        /* 十字亮點標籤樣式 */
+        .crosshair-avatar-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .crosshair-point {
+            width: 14px;
+            height: 14px;
+            background-color: #facc15; /* 亮黃色中心點 */
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #facc15, 0 0 20px #facc15;
+            animation: pulse-light 1.5s infinite alternate;
+        }
+        .crosshair-ring {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            border: 1.5px dashed #facc15;
+            border-radius: 50%;
+            animation: spin-ring 6s linear infinite;
+        }
+        .avatar-tag {
+            position: absolute;
+            left: 22px;
+            top: -12px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #facc15;
+            color: #ffffff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .sos-active .crosshair-point {
+            background-color: #ef4444 !important;
+            box-shadow: 0 0 10px #ef4444, 0 0 20px #ef4444 !important;
+        }
+        .sos-active .avatar-tag {
+            border-color: #ef4444 !important;
+            color: #fca5a5 !important;
+        }
+
+        @keyframes pulse-light {
+            0% { transform: scale(0.9); opacity: 0.8; }
+            100% { transform: scale(1.2); opacity: 1; }
+        }
+        @keyframes spin-ring {
+            100% { transform: rotate(360deg); }
+        }
+        .nav-pulse-btn { animation: nav-pulse 2s infinite; }
+        @keyframes nav-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+    </style>
 </head>
-<body class="bg-gray-100 h-screen flex flex-col">
+<body class="relative overflow-hidden h-screen">
 
-    <!-- 頂部資訊看板 -->
-    <header class="bg-emerald-800 text-white p-4 shadow-md flex justify-between items-center">
-        <div>
-            <h1 class="text-lg font-bold">山林即時定位系統</h1>
-            <p class="text-xs text-emerald-200">房間代號: <span id="roomDisplay" class="font-mono bg-emerald-900 px-2 py-0.5 rounded">trip_001</span></p>
+    <!-- 全螢幕地圖 -->
+    <div id="map" class="absolute inset-0"></div>
+
+    <!-- SOS 全螢幕緊急通報橫幅 (預設隱藏) -->
+    <div id="sosBanner" class="hidden absolute top-20 left-4 right-4 z-30 bg-red-600/95 text-white p-3.5 rounded-2xl shadow-2xl border border-red-400 flex justify-between items-center animate-bounce">
+        <div class="flex items-center space-x-2">
+            <span class="text-2xl">🚨</span>
+            <div>
+                <h3 class="font-extrabold text-sm" id="sosBannerTitle">緊急救援通報！</h3>
+                <p class="text-xs opacity-90" id="sosBannerDesc">有隊友發出 SOS 訊號，請聲援！</p>
+            </div>
         </div>
-        <div id="distanceInfo" class="text-sm bg-emerald-700 px-3 py-1 rounded-full">尋找雙方定位中...</div>
-    </header>
-
-    <!-- 地圖容器 -->
-    <div id="map" class="flex-grow z-0"></div>
-
-    <!-- 底部控制面板 -->
-    <div class="bg-white p-4 shadow-lg flex gap-3">
-        <button id="toggleHikerBtn" class="flex-1 bg-emerald-600 text-white py-3 rounded-lg font-bold shadow hover:bg-emerald-700 transition">
-            開啟我的定位
+        <button id="sosLocateBtn" class="bg-white text-red-700 font-extrabold text-xs px-3 py-2 rounded-xl shadow hover:bg-slate-100">
+            地圖瞄準
         </button>
-        <button id="navigateBtn" class="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold shadow hover:bg-blue-700 transition opacity-50 cursor-not-allowed" disabled>
-            導航至對方位置
-        </button>
+    </div>
+
+    <!-- 一鍵定位隊長按鈕 -->
+    <button id="recenterBtn" class="absolute bottom-28 right-4 z-10 bg-slate-900/90 hover:bg-slate-800 text-yellow-400 p-3 rounded-full shadow-xl border border-yellow-500/50 flex items-center justify-center text-xl transition active:scale-95 pointer-events-auto" title="回到我的位置">
+        🎯
+    </button>
+
+    <!-- 頂部標題與大黃字房號 -->
+    <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
+        <div class="bg-slate-900/95 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-yellow-500/60 shadow-2xl pointer-events-auto flex items-center space-x-3">
+            <span class="text-2xl">🏕️</span>
+            <div>
+                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">小隊專屬連線房號</div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-yellow-400 font-extrabold text-xl tracking-wide">#</span>
+                    <input type="text" id="roomIdInput" value="fangfeng888" class="bg-slate-800/80 text-yellow-300 font-black text-lg w-28 px-2 py-0.5 rounded-lg border border-yellow-500/40 focus:outline-none focus:border-yellow-400 tracking-wider">
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700 shadow-lg pointer-events-auto flex items-center space-x-1.5">
+            <span id="currentAvatarDisplay" class="text-xl">👑</span>
+            <input type="text" id="userNameInput" value="阿忠隊長" class="bg-slate-800 text-xs text-slate-100 font-bold w-16 px-1.5 py-1 rounded border border-slate-700 focus:outline-none">
+        </div>
+    </div>
+
+    <!-- 底部「懸浮快收」面板 -->
+    <div id="bottomSheet" class="absolute bottom-0 left-0 right-0 z-20 bg-slate-900/95 backdrop-blur-xl border-t border-yellow-500/40 rounded-t-3xl shadow-2xl transition-transform duration-300 flex flex-col max-h-[75vh]">
+        
+        <div id="sheetHandle" class="w-full py-3 flex justify-center items-center cursor-pointer">
+            <div class="w-12 h-1.5 bg-slate-700 rounded-full"></div>
+        </div>
+
+        <div class="px-5 pb-6 overflow-y-auto space-y-4">
+            
+            <!-- 個人圖標與狀態區 -->
+            <div class="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 space-y-3">
+                
+                <!-- Emoji 圖示選擇區 -->
+                <div>
+                    <div class="text-xs font-bold text-slate-400 mb-1.5 flex justify-between">
+                        <span>選擇你的隊友專屬圖案 (Emoji)</span>
+                        <span id="gpsCoordsText" class="text-[10px] text-yellow-400 font-mono">GPS 讀取中...</span>
+                    </div>
+                    <div class="flex gap-2 overflow-x-auto pb-1 text-xl no-scrollbar">
+                        <button onclick="selectEmoji('👑')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">👑</button>
+                        <button onclick="selectEmoji('🏕️')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🏕️</button>
+                        <button onclick="selectEmoji('🚴')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🚴</button>
+                        <button onclick="selectEmoji('🥾')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🥾</button>
+                        <button onclick="selectEmoji('🔥')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🔥</button>
+                        <button onclick="selectEmoji('🎒')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🎒</button>
+                        <button onclick="selectEmoji('🏮')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🏮</button>
+                        <button onclick="selectEmoji('📷')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">📷</button>
+                        <button onclick="selectEmoji('🐶')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🐶</button>
+                        <button onclick="selectEmoji('🐱')" class="emoji-opt p-1.5 bg-slate-700/60 rounded-xl hover:bg-yellow-500/30">🐱</button>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center pt-1 border-t border-slate-700/60">
+                    <span class="text-xs font-bold text-yellow-400 flex items-center gap-1">
+                        <span>💬</span> 我的小隊動態狀態
+                    </span>
+                    <button id="sosTriggerBtn" class="bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold px-3 py-1 rounded-xl shadow-lg shadow-red-600/40 flex items-center gap-1 animate-pulse">
+                        🚨 發射 SOS 求救
+                    </button>
+                </div>
+                
+                <div class="flex gap-2">
+                    <input type="text" id="statusInput" placeholder="輸入動態..." class="flex-1 bg-slate-900 text-sm border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-yellow-500">
+                    <button id="sendBtn" class="bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-sm transition shadow-lg shadow-yellow-500/20">發送</button>
+                </div>
+
+                <div class="flex gap-1.5 overflow-x-auto pt-0.5 pb-0.5 text-xs no-scrollbar">
+                    <button onclick="setStatus('🎒 剛出發')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🎒 剛出發</button>
+                    <button onclick="setStatus('💦 休息中')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">💦 休息中</button>
+                    <button onclick="setStatus('🔥 抵達集結點')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🔥 抵達集結點</button>
+                </div>
+            </div>
+
+            <!-- 隊友即時清單 -->
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase">小隊員即時雷達</h2>
+                    <span id="memberCount" class="text-xs text-yellow-400 font-semibold">連線中...</span>
+                </div>
+                <div id="memberList" class="space-y-2.5"></div>
+            </div>
+
+        </div>
     </div>
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
-    <!-- Firebase SDK (v9+ Modular CDN) -->
+    <!-- Firebase SDK (Version 9+ Module) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, remove, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, onValue, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // 1. 替換為你的 Firebase 控制台憑證
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-            databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT_ID.appspot.com",
-            messagingSenderId: "YOUR_SENDER_ID",
-            appId: "YOUR_APP_ID"
+            databaseURL: "https://fangfeng-default-rtdb.asia-southeast1.firebasedatabase.app"
         };
 
-        // 初始化 Firebase
         const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
+        const database = getDatabase(app);
 
-        // 從 URL 參數抓取房間代號 (例如: index.html?room=mountain101)
-        const urlParams = new URLSearchParams(window.location.search);
-        const roomId = urlParams.get('room') || 'trip_001';
-        document.getElementById('roomDisplay').textContent = roomId;
+        const myUserId = 'user_' + Math.random().toString(36).substring(2, 9);
+        let myRoomId = document.getElementById('roomIdInput').value.trim() || 'fangfeng888';
+        let myName = document.getElementById('userNameInput').value.trim() || '阿忠隊長';
+        let myAvatar = '👑';
+        let myLat = 22.6273, myLng = 120.3014;
+        let myStatus = '🎒 剛出發';
+        let isSOS = false;
 
-        // 定義資料庫路徑：這次行程中的登山客 (hiker) 與 朋友 (friend)
-        const hikerRef = ref(db, `trips/${roomId}/hiker`);
-        const friendRef = ref(db, `trips/${roomId}/friend`);
+        // 初始化地圖
+        const map = L.map('map', { zoomControl: false }).setView([myLat, myLng], 16);
+        L.control.zoom({ position: 'topright' }).addTo(map);
 
-        // 初始化 Leaflet 地圖 (以台灣中心點為預設)
-        const map = L.map('map').setView([23.5, 121], 8);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap'
+            maxZoom: 19, attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        let hikerMarker = null;
-        let friendMarker = null;
-        let watchId = null;
-        let isSharing = false;
+        const markersGroup = L.markerClusterGroup({ maxClusterRadius: 30 });
+        map.addLayer(markersGroup);
 
-        let myCoords = null;
-        let friendCoords = null;
+        let onlineMembers = {};
 
-        const toggleBtn = document.getElementById('toggleHikerBtn');
-        const navBtn = document.getElementById('navigateBtn');
-        const distanceInfo = document.getElementById('distanceInfo');
-
-        // 計算兩點距離函數 (Haversine Formula)
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371; // 地球半徑 (公里)
+        function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                       Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            const distance = R * c;
-
-            if (distance < 1) {
-                return `兩者相距 ${(distance * 1000).toFixed(0)} 公尺`;
-            }
-            return `兩者相距 ${distance.toFixed(2)} 公里`;
+            return Math.round(R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))));
         }
 
-        // 更新兩者距離看板
-        function updateDistanceDisplay() {
-            if (myCoords && friendCoords) {
-                const text = calculateDistance(myCoords.lat, myCoords.lon, friendCoords.lat, friendCoords.lon);
-                distanceInfo.textContent = text;
-                
-                // 啟用導航按鈕
-                navBtn.disabled = false;
-                navBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            } else if (myCoords) {
-                distanceInfo.textContent = "等待對方分享定位...";
-            } else if (friendCoords) {
-                distanceInfo.textContent = "已抓取對方定位，尚未開啟我的定位";
+        function syncToFirebase() {
+            const userRef = ref(database, `rooms/${myRoomId}/${myUserId}`);
+            set(userRef, {
+                id: myUserId,
+                name: myName,
+                avatar: myAvatar,
+                lat: myLat,
+                lng: myLng,
+                status: myStatus,
+                isSOS: isSOS,
+                lastSeen: Date.now()
+            });
+            onDisconnect(userRef).remove();
+        }
+
+        function listenRoomData() {
+            const roomRef = ref(database, `rooms/${myRoomId}`);
+            onValue(roomRef, (snapshot) => {
+                onlineMembers = snapshot.val() || {};
+                renderMapAndList();
+            });
+        }
+
+        listenRoomData();
+
+        function renderMapAndList() {
+            markersGroup.clearLayers();
+            const listContainer = document.getElementById('memberList');
+            listContainer.innerHTML = '';
+
+            const membersArr = Object.values(onlineMembers);
+            document.getElementById('memberCount').innerText = `線上: ${membersArr.length} 人`;
+
+            let sosTarget = null;
+
+            membersArr.forEach(member => {
+                const isMe = member.id === myUserId;
+                const sosClass = member.isSOS ? 'sos-active' : '';
+
+                // 十字亮點 + 暱稱/Emoji 標籤
+                const customIcon = L.divIcon({
+                    className: '',
+                    html: `
+                        <div class="crosshair-avatar-container ${sosClass}">
+                            <div class="crosshair-ring"></div>
+                            <div class="crosshair-point"></div>
+                            <div class="avatar-tag">
+                                <span>${member.avatar || '🏕️'}</span>
+                                <span>${member.name}</span>
+                            </div>
+                        </div>
+                    `,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                });
+
+                const marker = L.marker([member.lat, member.lng], { icon: customIcon });
+                const popupContent = `
+                    <div class="text-slate-900 p-2 min-w-[160px]">
+                        <div class="font-bold text-sm flex items-center gap-1">${member.avatar || '🏕️'} ${member.name} ${member.isSOS ? '🚨(SOS)' : ''}</div>
+                        <div class="text-xs text-slate-600 mt-1">狀態：${member.status}</div>
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="mt-3 block bg-yellow-500 text-slate-950 font-bold text-center text-xs py-2 px-3 rounded-xl shadow transition">
+                            🧭 一鍵導航去會合
+                        </a>
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+                markersGroup.addLayer(marker);
+
+                if (member.isSOS && !isMe) sosTarget = member;
+
+                if (!isMe) {
+                    const distMeters = getDistanceInMeters(myLat, myLng, member.lat, member.lng);
+                    const distanceStr = distMeters > 1000 ? (distMeters/1000).toFixed(1) + ' 公里' : distMeters + ' 公尺';
+
+                    const itemHTML = `
+                        <div class="bg-slate-800 p-3.5 rounded-2xl border ${member.isSOS ? 'border-red-500/80 bg-red-950/20' : 'border-slate-700/80'} flex items-center justify-between shadow-md">
+                            <div class="flex items-center space-x-3">
+                                <div class="text-2xl bg-slate-700/60 w-11 h-11 rounded-2xl flex items-center justify-center border border-slate-600">${member.avatar || '🏕️'}</div>
+                                <div>
+                                    <div class="flex items-center space-x-1.5">
+                                        <span class="text-sm font-bold text-slate-100">${member.name}</span>
+                                        ${member.isSOS ? '<span class="text-xs font-bold text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded">SOS!</span>' : ''}
+                                    </div>
+                                    <p class="text-xs text-slate-300 mt-0.5">${member.status}</p>
+                                    <p class="text-xs text-yellow-400 font-bold mt-0.5">距離你: ${distanceStr}</p>
+                                </div>
+                            </div>
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="nav-pulse-btn bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg shrink-0">
+                                🧭 導航
+                            </a>
+                        </div>
+                    `;
+                    listContainer.insertAdjacentHTML('beforeend', itemHTML);
+                }
+            });
+
+            // SOS 提醒
+            const sosBanner = document.getElementById('sosBanner');
+            if (sosTarget) {
+                sosBanner.classList.remove('hidden');
+                document.getElementById('sosBannerTitle').innerText = `🚨 ${sosTarget.name} 發出了 SOS 求救！`;
+                document.getElementById('sosBannerDesc').innerText = `距離約 ${getDistanceInMeters(myLat, myLng, sosTarget.lat, sosTarget.lng)} 公尺！`;
+                document.getElementById('sosLocateBtn').onclick = () => {
+                    map.flyTo([sosTarget.lat, sosTarget.lng], 17, { animate: true });
+                };
             } else {
-                distanceInfo.textContent = "等待雙方定位中...";
+                sosBanner.classList.add('hidden');
             }
         }
 
-        // 2. 開啟 / 關閉我的定位上傳
-        toggleBtn.addEventListener('click', () => {
-            if (!isSharing) {
-                if (navigator.geolocation) {
-                    watchId = navigator.geolocation.watchPosition((position) => {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        myCoords = { lat, lon };
+        // 高精度 GPS 定位
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition((pos) => {
+                myLat = pos.coords.latitude;
+                myLng = pos.coords.longitude;
+                document.getElementById('gpsCoordsText').innerText = `GPS: ${myLat.toFixed(4)}, ${myLng.toFixed(4)}`;
+                syncToFirebase();
+            }, (err) => console.warn(err), { enableHighAccuracy: true });
+        }
 
-                        // 更新本地地圖標記
-                        if (!hikerMarker) {
-                            hikerMarker = L.marker([lat, lon]).addTo(map).bindPopup("我的位置 (登山客)").openPopup();
-                            map.setView([lat, lon], 15);
-                        } else {
-                            hikerMarker.setLatLng([lat, lon]);
-                        }
+        // Emoji 切換函式
+        window.selectEmoji = function(char) {
+            myAvatar = char;
+            document.getElementById('currentAvatarDisplay').innerText = char;
+            syncToFirebase();
+        };
 
-                        // 【重點】：即時寫入資料至 Firebase (獨立節點 trips/{roomId}/hiker)
-                        set(hikerRef, {
-                            lat: lat,
-                            lon: lon,
-                            timestamp: Date.now()
-                        });
+        window.setStatus = function(text) {
+            document.getElementById('statusInput').value = text;
+        };
 
-                        updateDistanceDisplay();
+        document.getElementById('userNameInput').addEventListener('change', (e) => {
+            myName = e.target.value.trim() || '隊員';
+            syncToFirebase();
+        });
 
-                    }, (err) => {
-                        alert('無法取得 GPS 定位：' + err.message);
-                    }, { enableHighAccuracy: true });
+        document.getElementById('roomIdInput').addEventListener('change', (e) => {
+            myRoomId = e.target.value.trim() || 'fangfeng888';
+            listenRoomData();
+            syncToFirebase();
+        });
 
-                    isSharing = true;
-                    toggleBtn.textContent = "關閉我的定位";
-                    toggleBtn.className = "flex-1 bg-rose-600 text-white py-3 rounded-lg font-bold shadow hover:bg-rose-700 transition";
-                } else {
-                    alert('瀏覽器不支援地理定位');
-                }
-            } else {
-                // 停止手機 GPS 監控
-                if (watchId !== null) {
-                    navigator.geolocation.clearWatch(watchId);
-                    watchId = null;
-                }
+        document.getElementById('sosTriggerBtn').addEventListener('click', () => {
+            isSOS = !isSOS;
+            myStatus = isSOS ? '🚨 緊急求救中！需要協助！' : '🎒 剛出發';
+            document.getElementById('sosTriggerBtn').innerText = isSOS ? '❌ 取消 SOS 求救' : '🚨 發射 SOS 求救';
+            syncToFirebase();
+        });
 
-                // 【重點】：從 Firebase 移除定位紀錄，維持隱私
-                remove(hikerRef);
-
-                if (hikerMarker) {
-                    map.removeLayer(hikerMarker);
-                    hikerMarker = null;
-                }
-
-                myCoords = null;
-                isSharing = false;
-                toggleBtn.textContent = "開啟我的定位";
-                toggleBtn.className = "flex-1 bg-emerald-600 text-white py-3 rounded-lg font-bold shadow hover:bg-emerald-700 transition";
-                updateDistanceDisplay();
+        document.getElementById('sendBtn').addEventListener('click', () => {
+            const val = document.getElementById('statusInput').value.trim();
+            if (val) {
+                myStatus = val;
+                syncToFirebase();
+                document.getElementById('statusInput').value = '';
             }
         });
 
-        // 3. 監聽「朋友」在 Firebase 上的定位變化
-        onValue(friendRef, (snapshot) => {
-            const data = snapshot.val();
-            if (data && data.lat && data.lon) {
-                friendCoords = { lat: data.lat, lon: data.lon };
-
-                // 繪製或更新朋友地圖標記
-                if (!friendMarker) {
-                    friendMarker = L.marker([data.lat, data.lon]).addTo(map).bindPopup("朋友的位置");
-                } else {
-                    friendMarker.setLatLng([data.lat, data.lon]);
-                }
-            } else {
-                // 朋友關閉定位時移除標記
-                if (friendMarker) {
-                    map.removeLayer(friendMarker);
-                    friendMarker = null;
-                }
-                friendCoords = null;
-            }
-            updateDistanceDisplay();
+        document.getElementById('recenterBtn').addEventListener('click', () => {
+            map.flyTo([myLat, myLng], 16, { animate: true });
         });
 
-        // 4. 一鍵啟動外部地圖導航至對方位置
-        navBtn.addEventListener('click', () => {
-            if (friendCoords) {
-                const url = `https://www.google.com/maps/dir/?api=1&destination=${friendCoords.lat},${friendCoords.lon}&travelmode=walking`;
-                window.open(url, '_blank');
-            }
+        const bottomSheet = document.getElementById('bottomSheet');
+        let isExpanded = true;
+        document.getElementById('sheetHandle').addEventListener('click', () => {
+            isExpanded = !isExpanded;
+            bottomSheet.style.transform = isExpanded ? 'translateY(0)' : 'translateY(calc(100% - 70px))';
         });
     </script>
 </body>
