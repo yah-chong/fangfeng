@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>放風 - 戶外探險小隊即時地圖</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet MarkerCluster CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #121815; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        #map { width: 100%; height: 100vh; z-index: 1; }
+        .custom-avatar-icon {
+            background: #1e293b;
+            border: 3px solid #10b981;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s;
+        }
+        .custom-avatar-icon:hover { transform: scale(1.15); }
+        /* 超顯眼導航按鈕動態呼吸光暈 */
+        .nav-pulse-btn {
+            animation: nav-pulse 2s infinite;
+        }
+        @keyframes nav-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+    </style>
+</head>
+<body class="relative overflow-hidden h-screen">
+
+    <!-- 全螢幕地圖 -->
+    <div id="map" class="absolute inset-0"></div>
+
+    <!-- 頂部標題與隱私開關 -->
+    <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
+        <div class="bg-slate-900/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-emerald-500/30 shadow-lg pointer-events-auto flex items-center space-x-2">
+            <span class="text-xl">🏕️</span>
+            <div>
+                <h1 class="text-base font-bold text-emerald-400 tracking-wider">放風</h1>
+                <p class="text-xs text-slate-400">小隊即時雷達站</p>
+            </div>
+        </div>
+
+        <div class="bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700 shadow-lg pointer-events-auto flex items-center space-x-2">
+            <span class="text-xs text-slate-300 font-medium">分享定位</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="gpsToggle" class="sr-only peer" checked>
+                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            </label>
+        </div>
+    </div>
+
+    <!-- 底部「懸浮快收」面板 -->
+    <div id="bottomSheet" class="absolute bottom-0 left-0 right-0 z-20 bg-slate-900/95 backdrop-blur-xl border-t border-emerald-500/30 rounded-t-3xl shadow-2xl transition-transform duration-300 flex flex-col max-h-[70vh]">
+        
+        <!-- 拖曳/收合把手 -->
+        <div id="sheetHandle" class="w-full py-3 flex justify-center items-center cursor-pointer">
+            <div class="w-12 h-1.5 bg-slate-700 rounded-full"></div>
+        </div>
+
+        <div class="px-5 pb-6 overflow-y-auto space-y-4">
+            
+            <!-- 狀態與語音留言板區 -->
+            <div class="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 space-y-2">
+                <div class="flex justify-between items-center">
+                    <span class="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                        <span>💬</span> 我的小隊動態狀態
+                    </span>
+                    <span id="micStatus" class="text-[10px] text-slate-400 hidden bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full animate-pulse">🎤 聆聽中...</span>
+                </div>
+                
+                <div class="flex gap-2">
+                    <input type="text" id="statusInput" placeholder="輸入動態或使用語音..." class="flex-1 bg-slate-900 text-sm border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500">
+                    <button id="voiceBtn" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-xl text-sm transition flex items-center justify-center" title="語音輸入">🎤</button>
+                    <button id="sendBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-lg shadow-emerald-600/30">發送</button>
+                </div>
+
+                <!-- 快捷標籤 -->
+                <div class="flex gap-1.5 overflow-x-auto pt-1 pb-1 text-xs no-scrollbar">
+                    <button onclick="setStatus('🎒 剛出發')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🎒 剛出發</button>
+                    <button onclick="setStatus('💦 休息中')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">💦 休息中</button>
+                    <button onclick="setStatus('🪨 鞋帶鬆了')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🪨 鞋帶鬆了</button>
+                    <button onclick="setStatus('🔥 抵達集結點')" class="bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg whitespace-nowrap">🔥 抵達集結點</button>
+                </div>
+            </div>
+
+            <!-- 隊友即時距離與超級顯眼導航清單 -->
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase">小隊員即時雷達 (群聚自動打包)</h2>
+                    <span id="memberCount" class="text-xs text-emerald-400 font-semibold">線上: 4人</span>
+                </div>
+                <div id="memberList" class="space-y-2.5">
+                    <!-- 動態生成隊友清單 -->
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Leaflet & MarkerCluster JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script>
+        // 初始化地圖
+        const map = L.map('map', { zoomControl: false }).setView([22.6273, 120.3014], 15);
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // MarkerCluster 群組初始化
+        const markersGroup = L.markerClusterGroup({
+            maxClusterRadius: 50,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
+        });
+        map.addLayer(markersGroup);
+
+        // 模擬隊友資料
+        let teammates = [
+            { id: 1, name: '阿忠 (你)', avatar: '🏕️', lat: 22.6273, lng: 120.3014, status: '🎒 剛出發', signal: 'green', timeAgo: '即時' },
+            { id: 2, name: '小明', avatar: '🥾', lat: 22.6295, lng: 120.3040, status: '💦 休息喝水', signal: 'green', timeAgo: '即時' },
+            { id: 3, name: '老王', avatar: '🎒', lat: 22.6250, lng: 120.2980, status: '🪨 鞋帶鬆了', signal: 'yellow', timeAgo: '💤 顯示 3 分鐘前最後已知位置' },
+            { id: 4, name: '小美', avatar: '🏮', lat: 22.6310, lng: 120.2950, status: '🔥 抵達集結點', signal: 'green', timeAgo: '即時' }
+        ];
+
+        let myStatus = '🎒 剛出發';
+
+        function renderMapAndList() {
+            markersGroup.clearLayers();
+            const listContainer = document.getElementById('memberList');
+            listContainer.innerHTML = '';
+
+            teammates.forEach(member => {
+                // 自訂地圖大頭貼圖示
+                const customIcon = L.divIcon({
+                    className: '',
+                    html: `<div class="custom-avatar-icon w-10 h-10">${member.avatar}</div>`,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20]
+                });
+
+                const marker = L.marker([member.lat, member.lng], { icon: customIcon });
+                
+                // 彈出視窗：設計成超顯眼的全寬導航按鈕
+                const popupContent = `
+                    <div class="text-slate-900 p-2 min-w-[160px]">
+                        <div class="font-bold text-sm flex items-center gap-1">${member.avatar} ${member.name}</div>
+                        <div class="text-xs text-slate-600 mt-1">狀態：${member.status}</div>
+                        <div class="text-[10px] text-amber-600 mt-0.5">${member.timeAgo}</div>
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="mt-3 block bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-center text-xs py-2 px-3 rounded-xl shadow-md transition flex items-center justify-center gap-1">
+                            <span>🧭</span> 一鍵導航去會合
+                        </a>
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+                markersGroup.addLayer(marker);
+
+                // 計算距離
+                const distance = member.id === 1 ? '你本人' : '約 ' + (Math.abs(member.lat - 22.6273) * 111000).toFixed(0) + ' 公尺';
+                const signalDot = member.signal === 'green' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse';
+
+                // 渲染下方面板清單（將導航按鈕改為超顯眼的橙色發光大按鈕）
+                if (member.id !== 1) {
+                    const itemHTML = `
+                        <div class="bg-slate-800 p-3.5 rounded-2xl border border-slate-700/80 flex items-center justify-between shadow-md">
+                            <div class="flex items-center space-x-3">
+                                <div class="text-2xl bg-slate-700/60 w-11 h-11 rounded-2xl flex items-center justify-center border border-slate-600">${member.avatar}</div>
+                                <div>
+                                    <div class="flex items-center space-x-1.5">
+                                        <span class="text-sm font-bold text-slate-100">${member.name}</span>
+                                        <span class="w-2 h-2 rounded-full ${signalDot}" title="訊號狀態"></span>
+                                    </div>
+                                    <p class="text-xs text-slate-300 mt-0.5">${member.status}</p>
+                                    <p class="text-xs text-emerald-400 font-bold mt-0.5">距離: ${distance}</p>
+                                    ${member.signal === 'yellow' ? '<p class="text-[10px] text-amber-400/90 mt-0.5">💤 顯示 3 分鐘前最後位置</p>' : ''}
+                                </div>
+                            </div>
+                            <!-- 升級後的超顯眼「一鍵導航會合」按鈕 -->
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}" target="_blank" class="nav-pulse-btn bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex flex-col items-center justify-center gap-0.5 shrink-0">
+                                <span class="text-base">🧭</span>
+                                <span>一鍵導航</span>
+                            </a>
+                        </div>
+                    `;
+                    listContainer.insertAdjacentHTML('beforeend', itemHTML);
+                }
+            });
+        }
+
+        renderMapAndList();
+
+        // 語音轉文字功能設定 (Web Speech API)
+        const voiceBtn = document.getElementById('voiceBtn');
+        const statusInput = document.getElementById('statusInput');
+        const micStatus = document.getElementById('micStatus');
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'zh-TW';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            voiceBtn.addEventListener('click', () => {
+                recognition.start();
+                micStatus.classList.remove('hidden');
+                voiceBtn.classList.add('bg-red-600', 'text-white');
+            });
+
+            recognition.onresult = (event) => {
+                const speechResult = event.results[0][0].transcript;
+                statusInput.value = speechResult;
+                micStatus.classList.add('hidden');
+                voiceBtn.classList.remove('bg-red-600', 'text-white');
+            };
+
+            recognition.onerror = () => {
+                micStatus.classList.add('hidden');
+                voiceBtn.classList.remove('bg-red-600', 'text-white');
+                alert('語音辨識發生錯誤，請再試一次或手動輸入。');
+            };
+
+            recognition.onend = () => {
+                micStatus.classList.add('hidden');
+                voiceBtn.classList.remove('bg-red-600', 'text-white');
+            };
+        } else {
+            voiceBtn.style.display = 'none';
+        }
+
+        // 發送與快捷狀態設定
+        function setStatus(text) {
+            statusInput.value = text;
+        }
+
+        document.getElementById('sendBtn').addEventListener('click', () => {
+            const val = statusInput.value.trim();
+            if (val) {
+                teammates[0].status = val;
+                renderMapAndList();
+                statusInput.value = '';
+                alert('狀態已更新發送！');
+            }
+        });
+
+        // 面板收合互動
+        const bottomSheet = document.getElementById('bottomSheet');
+        const sheetHandle = document.getElementById('sheetHandle');
+        let isExpanded = true;
+
+        sheetHandle.addEventListener('click', () => {
+            isExpanded = !isExpanded;
+            if (isExpanded) {
+                bottomSheet.style.transform = 'translateY(0)';
+            } else {
+                bottomSheet.style.transform = 'translateY(calc(100% - 70px))';
+            }
+        });
+    </script>
+</body>
+</html>
